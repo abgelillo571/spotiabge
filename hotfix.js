@@ -131,8 +131,18 @@
   if (window.__sabHourly) return;
   window.__sabHourly = true;
   var BASE = 'https://raw.githubusercontent.com/abgelillo571/spotiabge/main/hora/';
-  function on(){ try { return localStorage.getItem('sab_hora') !== 'off'; } catch (e) { return true; } }
+  // newer app builds speak the hour natively (works with the screen off and in offline mode)
+  var NATIVE = !!(window.AndBridge && typeof AndBridge.sabSayHourNow === 'function');
+  function on(){
+    if (NATIVE) { try { return AndBridge.sabGetPref('SabHora') !== 'false'; } catch (e) { return true; } }
+    try { return localStorage.getItem('sab_hora') !== 'off'; } catch (e) { return true; }
+  }
+  function setOn(v){
+    if (NATIVE) { try { AndBridge.sabSetPref('SabHora', v ? 'true' : 'false'); } catch (e) {} return; }
+    try { localStorage.setItem('sab_hora', v ? 'on' : 'off'); } catch (e) {}
+  }
   function say(h){
+    if (NATIVE) { try { AndBridge.sabSayHourNow(); } catch (e) {} return; }
     var a = new Audio(BASE + (h < 10 ? '0' : '') + h + '.mp3');
     var m = null, v = 1;
     try { m = window.splMediaEl && window.splMediaEl(); if (m) { v = m.volume; m.volume = Math.min(v, 0.25); } } catch (e) {}
@@ -144,9 +154,9 @@
   window.sabSayHour = function(){ say(new Date().getHours()); };
   var last = -1;
   try { last = +(localStorage.getItem('sab_hora_last') || -1); } catch (e) {}
-  setInterval(function(){
+  if (!NATIVE) setInterval(function(){
     var d = new Date(), key = d.getDate() * 100 + d.getHours();
-    if (d.getMinutes() !== 0 || key === last || !on()) return;
+    if (d.getMinutes() > 1 || key === last || !on()) return;
     if (!(window.splIsPlaying && window.splIsPlaying() === true)) return;
     last = key;
     try { localStorage.setItem('sab_hora_last', String(key)); } catch (e) {}
@@ -164,7 +174,7 @@
     label();
     b.addEventListener('click', function(e){
       e.stopPropagation();
-      try { localStorage.setItem('sab_hora', on() ? 'off' : 'on'); } catch (x) {}
+      setOn(!on());
       label();
       if (on()) window.sabSayHour();
     });
