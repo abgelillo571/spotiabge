@@ -72,12 +72,15 @@
       if (playing === true && !S.want && now - S.userPauseAt > 3000) { S.want = true; S.step = 0; }
       if (!S.want || remote() || q.p < 0) { S.lastPos = q.p; S.sameSince = now; return; }
       // only forward movement proves it plays; a jump back to 0 is just a (maybe frozen) new track
+      // after an action it must really play again (3 s+), not just tick a few ms and stop
+      if (q.p > S.lastPos && S.lastPos >= 0 && S.step && q.p - S.base < 3000) { S.lastPos = q.p; return; }
       if (q.p > S.lastPos && S.lastPos >= 0) { S.lastPos = q.p; S.sameSince = now; if (S.step) log('recuperado (paso ' + S.step + ')'); S.step = 0; return; }
       if (q.p !== S.lastPos) { S.lastPos = q.p; if (S.step === 0) S.sameSince = now; return; }
       var stuck = now - S.sameSince;
       // stopped on its own (not frozen while "playing"): wait longer, it may be a phone call
       if (stuck < (playing === true ? STUCK : 60000) || now - S.lastAct < (playing === true ? GAP : 60000)) return;
       S.lastAct = now;
+      S.base = q.p;
       var atEnd = q.d > 0 && q.p >= q.d - 2500;
       S.step++;
       if (S.step === 1) {
@@ -96,9 +99,28 @@
       }
     } catch (e) { log('error ' + e); }
   }
-  setInterval(tick, TICK);
+  // remember the intent so a page reload after Xiaomi kills the WebView ("ScreenOffCPUCheckKill") keeps playing
+  function saveIntent(){ try { localStorage.setItem('sab_intent', JSON.stringify({want: S.want, t: Date.now()})); } catch (e) {} }
+  setInterval(function(){ tick(); saveIntent(); }, TICK);
+  var prev = null;
+  try { prev = JSON.parse(localStorage.getItem('sab_intent') || 'null'); } catch (e) {}
   if (window.splIsPlaying() === true) S.want = true;
+  else if (prev && prev.want && Date.now() - prev.t < 5 * 60000) {
+    S.want = true; S.sameSince = Date.now();
+    log('el reproductor se reinicio mientras sonaba -> reanudando');
+    var n = 0, iv = setInterval(function(){
+      n++;
+      if (window.splIsPlaying() === true || n > 40) { clearInterval(iv); return; }
+      if (window.pBtn && window.spotDevId && n % 4 === 1) { try { AndBridge.wakeUp(); } catch (e) {} orig(true); }
+    }, 1500);
+  }
   log('vigilante activo');
+
+  // reCAPTCHA is only needed to log in, but keeps running and burns CPU with the screen off
+  setInterval(function(){
+    if (!document.hidden || !window.spotAuthToken) return;
+    try { document.querySelectorAll('iframe[src*="recaptcha"]').forEach(function(f){ f.remove(); }); } catch (e) {}
+  }, 30000);
 })();
 
 // ---------------------------------------------------------------------------------------------
